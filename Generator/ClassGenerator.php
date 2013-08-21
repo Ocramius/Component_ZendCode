@@ -490,7 +490,7 @@ class ClassGenerator extends AbstractGenerator
             $use .= ' as ' . $useAlias;
         }
 
-        $this->uses[$use] = $use;
+        $this->uses[] = $use;
         return $this;
     }
 
@@ -524,7 +524,7 @@ class ClassGenerator extends AbstractGenerator
      */
     public function getUses()
     {
-        return array_values($this->uses);
+        return $this->uses;
     }
 
     /**
