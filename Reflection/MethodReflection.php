@@ -17,6 +17,16 @@ use Zend\Code\Scanner\CachingFileScanner;
 class MethodReflection extends PhpReflectionMethod implements ReflectionInterface
 {
     /**
+     * Constant use in @MethodReflection to display prototype as an array
+     */
+    const PROTOTYPE_AS_ARRAY = 'prototype_as_array';
+
+    /**
+     * Constant use in @MethodReflection to display prototype as a string
+     */
+    const PROTOTYPE_AS_STRING = 'prototype_as_string';
+
+    /**
      * @var AnnotationScanner
      */
     protected $annotations = null;
@@ -47,12 +57,18 @@ class MethodReflection extends PhpReflectionMethod implements ReflectionInterfac
             return false;
         }
 
-        if (!$this->annotations) {
-            $cachingFileScanner = new CachingFileScanner($this->getFileName());
-            $nameInformation    = $cachingFileScanner->getClassNameInformation($this->getDeclaringClass()->getName());
-
-            $this->annotations = new AnnotationScanner($annotationManager, $docComment, $nameInformation);
+        if ($this->annotations) {
+            return $this->annotations;
         }
+
+        $cachingFileScanner = $this->createFileScanner($this->getFileName());
+        $nameInformation    = $cachingFileScanner->getClassNameInformation($this->getDeclaringClass()->getName());
+
+        if (!$nameInformation) {
+            return false;
+        }
+
+        $this->annotations = new AnnotationScanner($annotationManager, $docComment, $nameInformation);
 
         return $this->annotations;
     }
@@ -89,6 +105,61 @@ class MethodReflection extends PhpReflectionMethod implements ReflectionInterfac
     }
 
     /**
+     * Get method prototype
+     *
+     * @return array
+     */
+    public function getPrototype($format = MethodReflection::PROTOTYPE_AS_ARRAY)
+    {
+        $returnType = 'mixed';
+        $docBlock = $this->getDocBlock();
+        if ($docBlock) {
+            /** @var Zend\Code\Reflection\DocBlock\Tag\ReturnTag $return */
+            $return = $docBlock->getTag('return');
+            $returnTypes = $return->getTypes();
+            $returnType = count($returnTypes) > 1 ? implode('|', $returnTypes) : $returnTypes[0];
+        }
+
+        $declaringClass = $this->getDeclaringClass();
+        $prototype = array(
+            'namespace'  => $declaringClass->getNamespaceName(),
+            'class'      => substr($declaringClass->getName(), strlen($declaringClass->getNamespaceName()) + 1),
+            'name'       => $this->getName(),
+            'visibility' => ($this->isPublic() ? 'public' : ($this->isPrivate() ? 'private' : 'protected')),
+            'return'     => $returnType,
+            'arguments'  => array(),
+        );
+
+        $parameters = $this->getParameters();
+        foreach ($parameters as $parameter) {
+            $prototype['arguments'][$parameter->getName()] = array(
+                'type'     => $parameter->getType(),
+                'required' => !$parameter->isOptional(),
+                'by_ref'   => $parameter->isPassedByReference(),
+                'default'  => $parameter->isDefaultValueAvailable() ? $parameter->getDefaultValue() : null,
+            );
+        }
+
+        if ($format == MethodReflection::PROTOTYPE_AS_STRING) {
+            $line = $prototype['visibility'] . ' ' . $prototype['return'] . ' ' . $prototype['name'] . '(';
+            $args = array();
+            foreach ($prototype['arguments'] as $name => $argument) {
+                $argsLine = ($argument['type'] ? $argument['type'] . ' ' : '') . ($argument['by_ref'] ? '&' : '') . '$' . $name;
+                if (!$argument['required']) {
+                    $argsLine .= ' = ' . var_export($argument['default'], true);
+                }
+                $args[] = $argsLine;
+            }
+            $line .= implode(', ', $args);
+            $line .= ')';
+
+            return $line;
+        }
+
+        return $prototype;
+    }
+
+    /**
      * Get all method parameter reflection objects
      *
      * @return ParameterReflection[]
@@ -114,7 +185,7 @@ class MethodReflection extends PhpReflectionMethod implements ReflectionInterfac
     /**
      * Get method contents
      *
-     * @param  bool $includeDocBlock
+     * @param  bool   $includeDocBlock
      * @return string
      */
     public function getContents($includeDocBlock = true)
@@ -164,5 +235,20 @@ class MethodReflection extends PhpReflectionMethod implements ReflectionInterfac
     public function __toString()
     {
         return parent::__toString();
+    }
+
+    /**
+     * Creates a new FileScanner instance.
+     *
+     * By having this as a seperate method it allows the method to be overridden
+     * if a different FileScanner is needed.
+     *
+     * @param  string $filename
+     *
+     * @return FileScanner
+     */
+    protected function createFileScanner($filename)
+    {
+        return new CachingFileScanner($filename);
     }
 }
