@@ -310,15 +310,22 @@ class ValueGenerator extends AbstractGenerator
 
         if ($type == self::TYPE_AUTO) {
             $type = $this->getAutoDeterminedType($value);
-        }
 
-        if ($type == self::TYPE_ARRAY) {
-            foreach ($value as &$curValue) {
-                if ($curValue instanceof self) {
-                    continue;
+            if ($type == self::TYPE_ARRAY) {
+                $rii = new \RecursiveIteratorIterator(
+                    $it = new \RecursiveArrayIterator($value),
+                    \RecursiveIteratorIterator::SELF_FIRST
+                );
+                foreach ($rii as $curKey => $curValue) {
+                    if (!$curValue instanceof ValueGenerator) {
+                        $curValue = new self($curValue, self::TYPE_AUTO, self::OUTPUT_MULTIPLE_LINE, $this->getConstants());
+                        $rii->getSubIterator()->offsetSet($curKey, $curValue);
+                    }
+                    $curValue->setArrayDepth($rii->getDepth());
                 }
-                $curValue = new self($curValue, self::TYPE_AUTO, self::OUTPUT_MULTIPLE_LINE, $this->getConstants());
+                $value = $rii->getSubIterator()->getArrayCopy();
             }
+
         }
 
         $output = '';
@@ -434,5 +441,4 @@ class ValueGenerator extends AbstractGenerator
     {
         return $this->generate();
     }
-
 }
